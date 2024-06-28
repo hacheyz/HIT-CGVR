@@ -5,16 +5,21 @@
 #include "camera.h"
 #include "shader.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+
+#include "stb_image.h"
+
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void processInput(GLFWwindow *window);
 void mouse_callback(GLFWwindow *window, double xposIn, double yposIn);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
+unsigned int loadTexture(const char *path);
 
 // window size
-const unsigned int SCR_WIDTH = 800;
-const unsigned int SCR_HEIGHT = 600;
+const unsigned int SCR_WIDTH = 2560;
+const unsigned int SCR_HEIGHT = 1600;
 
-Camera camera(glm::vec3(0.0f, 1.0f, 0.0f));
+Camera camera(glm::vec3(0.0f, 0.5f, 3.0f));
 float lastX = (float)SCR_WIDTH/2.0;
 float lastY = (float)SCR_HEIGHT/2.0;
 bool firstMouse = true;
@@ -36,7 +41,7 @@ int main()
 #endif
 
 	// glfw window creation
-	GLFWwindow *window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LearnOpenGL", NULL, NULL);
+	GLFWwindow *window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Diamond", NULL, NULL);
 	if (window == NULL) {
 		std::cout << "Failed to create GLFW window" << std::endl;
 		glfwTerminate();
@@ -46,7 +51,7 @@ int main()
 	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 	glfwSetCursorPosCallback(window, mouse_callback);
 	glfwSetScrollCallback(window, scroll_callback);
-//	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED); // todo
+	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED); // todo
 
 	// glad: load all OpenGL function pointers
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
@@ -55,45 +60,74 @@ int main()
 	}
 
 	// set up vertex data (and buffer(s)) and configure vertex attributes
-	float vertices[] = {
-			-0.5f, -0.5f, 0.0f, // left-bottom
-			0.5f, -0.5f, 0.0f, // right-bottom
-			0.0f, 0.5f, 0.0f  // top
+	float diamondVertices[] = {
+			// vertex pos // texture pos
+			0.5f, 0.0f, 0.0f, 0.0f, 0.0f,
+			0.0f, 0.5f, 0.0f, 1.0f, 0.0f,
+			0.0f, 0.0f, 0.5f, 1.0f, 1.0f,
+			-0.5f, 0.0f, 0.0f, 0.0f, 0.0f,
+			0.0f, -0.5f, 0.0f, 1.0f, 0.0f,
+			0.0f, 0.0f, -0.5f, 1.0f, 1.0f,
 	};
 
-	// bind the Vertex Array Object first, then bind and set vertex buffer(s), and then configure vertex attributes(s).
-	unsigned int VAO;  // vertex array object
-	glGenVertexArrays(1, &VAO);
-	glBindVertexArray(VAO);
+	unsigned int diamondIndices[] = {
+			1, 0, 2,
+			3, 1, 2,
+			4, 3, 2,
+			0, 4, 2,
+			4, 0, 5,
+			0, 1, 5,
+			1, 3, 5,
+			3, 4, 5,
+	};
 
-	unsigned int VBO;  // vertex buffer object
-	glGenBuffers(1, &VBO);
-	glBindBuffer(GL_ARRAY_BUFFER, VBO);  // bind VBO to GL_ARRAY_BUFFER
-	// now we can straightly copy our vertex data into GL_ARRAY_BUFFER
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-	// explain how OpenGL should interpret the vertex data before rendering
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(float), (void *)0);
-	glEnableVertexAttribArray(0);
+	glEnable(GL_DEPTH_TEST);
 
 	// create Shader
-	Shader shader_triangle("res/expr1.vs", "res/expr1.fs");
+	Shader shader_diamond("res/expr2.vs", "res/expr2.fs");
+	unsigned int texture = loadTexture("res/diamond.jpg");
+	shader_diamond.use();
+	shader_diamond.setInt("texture1", 0);
+
+	unsigned int VBO, VAO, EBO;
+	glGenVertexArrays(1, &VAO);
+	glGenBuffers(1, &VBO);
+	glGenBuffers(1, &EBO);
+	glBindVertexArray(VAO);
+	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(diamondVertices), diamondVertices, GL_STATIC_DRAW);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(diamondIndices), diamondIndices, GL_STATIC_DRAW);
+
+	// position attribute
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void *)0);
+	glEnableVertexAttribArray(0);
+
+	// texture coord attribute
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void *)(3*sizeof(float)));
+	glEnableVertexAttribArray(1);
 
 	// render loop
 	while (!glfwWindowShouldClose(window)) {
-		// input (Esc to close)
+		float currentFrame = static_cast<float>(glfwGetTime());
+		deltaTime = currentFrame - lastFrame;
+		lastFrame = currentFrame;
 		processInput(window);
 
-		// render
-		glClearColor(0.8f, 0.85f, 0.9f, 1.0f);  // set background color
+		// render (clear the color buffer)
+		glClearColor(0.1f, 0.1f, 0.15f, 1.0f);  // set background color
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		// draw our first triangle
-		shader_triangle.use();
-		glBindVertexArray(
-				VAO); // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
-		glDrawArrays(GL_TRIANGLES, 0, 3);
-		// glBindVertexArray(0); // no need to unbind it every time
+		// render diamond
+		shader_diamond.use();
+		shader_diamond.setMat4("model", glm::mat4(1.0f));
+		shader_diamond.setMat4("view", camera.GetViewMatrix());
+		shader_diamond.setMat4("projection",
+				glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH/(float)SCR_HEIGHT, 0.1f, 100.0f));
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, texture);
+		glBindVertexArray(VAO);
+		glDrawElements(GL_TRIANGLES, 24, GL_UNSIGNED_INT, 0);
 
 		// glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
 		glfwSwapBuffers(window);
@@ -151,4 +185,43 @@ void mouse_callback(GLFWwindow *window, double xposIn, double yposIn)
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset)
 {
 	camera.ProcessMouseScroll(static_cast<float>(yoffset));
+}
+
+unsigned int loadTexture(const char *path)
+{
+	unsigned int textureID;
+	glGenTextures(1, &textureID);
+
+	int width, height, nrComponents;
+	unsigned char *data = stbi_load(path, &width, &height, &nrComponents, 0);
+	if (data) {
+		GLenum format;
+		if (nrComponents == 1)
+			format = GL_RED;
+		else if (nrComponents == 3)
+			format = GL_RGB;
+		else if (nrComponents == 4)
+			format = GL_RGBA;
+
+		glBindTexture(GL_TEXTURE_2D, textureID);  // so that we can just operate on GL_TEXTURE_2D
+		glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+		glGenerateMipmap(GL_TEXTURE_2D);
+
+		// set the texture wrapping/filtering options (on the currently bound texture object)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		if (format == GL_RGBA) {
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		}
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+		stbi_image_free(data);
+	} else {
+		std::cout << "Texture failed to load at path: " << path << std::endl;
+		stbi_image_free(data);
+	}
+
+	return textureID;
 }
